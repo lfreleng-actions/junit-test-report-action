@@ -1,6 +1,6 @@
 ---
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2025 The Linux Foundation
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
 
 # Action test/validation workflow
 name: "Test GitHub Action 🧪"
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    timeout-minutes: 10 # Increase this timeout value as needed
+    timeout-minutes: 10
     steps:
       # Load the egress allow-list out-of-band from the
       # organisation's .github repository and publish it as
@@ -50,41 +50,110 @@ jobs:
         with:
           persist-credentials: false
 
-      # Perform setup prior to running test(s)
-      - name: "Testing setup step"
-        shell: bash
-        run: |
-          # Testing setup step
-          echo "Testing setup step"
-          echo "Testing setup step/summary output" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: "Running local action: ${{ github.repository }}"
+      # Passing fixtures: five tests, one skipped, no failures.
+      - name: "Report passing fixtures"
+        id: pass
         uses: ./
         with:
-          input: "test input 💬"
+          report-paths: "tests/reports/pass/*.xml"
+          artifact-name: "junit-pass-fixtures"
 
-      - name: "Validated local action: ${{ github.repository }}"
+      - name: "Validate passing result"
         shell: bash
         env:
-          REPO: ${{ github.repository }}
+          TOTAL: ${{ steps.pass.outputs.total }}
+          PASSED: ${{ steps.pass.outputs.passed }}
+          FAILURES: ${{ steps.pass.outputs.failures }}
+          ERRORS: ${{ steps.pass.outputs.errors }}
+          SKIPPED: ${{ steps.pass.outputs.skipped }}
+          RESULT: ${{ steps.pass.outputs.result }}
+          REPORT_COUNT: ${{ steps.pass.outputs.report_count }}
+          ARTIFACT_NAME: ${{ steps.pass.outputs.artifact_name }}
         run: |
-          # Local action validation
-          echo "Validated local action: $REPO"
-          echo "Validation step summary output" >> "$GITHUB_STEP_SUMMARY"
+          # Validate passing result
+          set -euo pipefail
+          errors=0
+          check() {
+            if [ "$2" != "$3" ]; then
+              echo "Error: $1 expected '$3' but got '$2' ❌"
+              errors=1
+            else
+              echo "OK: $1 = $2 ✅"
+            fi
+          }
+          check "total" "$TOTAL" "5"
+          check "passed" "$PASSED" "4"
+          check "failures" "$FAILURES" "0"
+          check "errors" "$ERRORS" "0"
+          check "skipped" "$SKIPPED" "1"
+          check "result" "$RESULT" "success"
+          check "report_count" "$REPORT_COUNT" "2"
+          check "artifact_name" "$ARTIFACT_NAME" "junit-pass-fixtures"
+          exit "$errors"
 
-      # yamllint disable-line rule:line-length
-      - name: "Running local action: ${{ github.repository }} [Override Failure]"
+      # No matching reports: the action stays neutral rather than failing.
+      # Leave artifact-upload at its default (true) so the neutral path
+      # exercises the artifact_name contract: with no reports the upload is
+      # skipped and artifact_name must be empty.
+      - name: "Report with no matching files"
+        id: none
         uses: ./
-        id: failure
-        continue-on-error: true
         with:
-          invalid_input: "Some garbage"
+          report-paths: "tests/reports/does-not-exist/*.xml"
 
-      # Failure testing is also important
-      - name: "Error if step above did NOT fail"
-        if: steps.failure.outcome == 'success'
+      - name: "Validate neutral result"
         shell: bash
+        env:
+          RESULT: ${{ steps.none.outputs.result }}
+          TOTAL: ${{ steps.none.outputs.total }}
+          REPORT_COUNT: ${{ steps.none.outputs.report_count }}
+          ARTIFACT_NAME: ${{ steps.none.outputs.artifact_name }}
         run: |
-          # Error if step above did NOT fail
-          echo "Error: previous test step did NOT fail ❌"
-          exit 1
+          # Validate neutral result
+          set -euo pipefail
+          if [ "$RESULT" != "none" ] || [ "$TOTAL" != "0" ] \
+             || [ "$REPORT_COUNT" != "0" ]; then
+            echo "Error: expected neutral result with zero counts ❌"
+            exit 1
+          fi
+          if [ -n "$ARTIFACT_NAME" ]; then
+            echo "Error: artifact_name must be empty with no reports ❌"
+            exit 1
+          fi
+          echo "Neutral result validated ✅"
+
+      # Failing fixtures with fail-on-failure must set the step to failed.
+      - name: "Report failing fixtures"
+        id: fail
+        continue-on-error: true
+        uses: ./
+        with:
+          report-paths: "tests/reports/fail/*.xml"
+          artifact-upload: "false"
+          fail-on-failure: "true"
+
+      - name: "Validate failing result"
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.fail.outcome }}
+          FAILURES: ${{ steps.fail.outputs.failures }}
+          ERRORS: ${{ steps.fail.outputs.errors }}
+          RESULT: ${{ steps.fail.outputs.result }}
+          ARTIFACT_NAME: ${{ steps.fail.outputs.artifact_name }}
+        run: |
+          # Validate failing result
+          set -euo pipefail
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "Error: expected step outcome 'failure' but got '$OUTCOME' ❌"
+            exit 1
+          fi
+          if [ "$FAILURES" != "1" ] || [ "$ERRORS" != "0" ] \
+             || [ "$RESULT" != "failure" ]; then
+            echo "Error: expected one failure, no errors, result 'failure' ❌"
+            exit 1
+          fi
+          if [ -n "$ARTIFACT_NAME" ]; then
+            echo "Error: artifact_name must be empty when upload is off ❌"
+            exit 1
+          fi
+          echo "Failing result validated ✅"

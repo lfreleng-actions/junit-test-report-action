@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 The Linux Foundation -->
+<testsuite name="com.example.PassTwo" tests="2" failures="0" errors="0" skipped="1" time="0.500">
+  <testcase name="delta" classname="com.example.PassTwo" time="0.500"/>
+  <testcase name="epsilon" classname="com.example.PassTwo" time="0.000">
+    <skipped/>
+  </testcase>
+</testsuite>

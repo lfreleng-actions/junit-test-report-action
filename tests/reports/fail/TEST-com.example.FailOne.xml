@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 The Linux Foundation -->
+<testsuite name="com.example.FailOne" tests="2" failures="1" errors="0" skipped="0" time="0.750">
+  <testcase name="zeta" classname="com.example.FailOne" time="0.500"/>
+  <testcase name="eta" classname="com.example.FailOne" time="0.250">
+    <failure message="expected true">assertion failed</failure>
+  </testcase>
+</testsuite>

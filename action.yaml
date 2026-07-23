@@ -1,53 +1,269 @@
 ---
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2025 The Linux Foundation
+# SPDX-FileCopyrightText: 2026 The Linux Foundation
 
-# actions-template
-name: "🛠️ Actions Template"
-description: "Description of action"
-# Any relevant notes/observations can go here
+# junit-test-report-action
+name: "🧪 JUnit Test Report"
+# yamllint disable-line rule:line-length
+description: "Summarise JUnit XML test results in the job summary with counts and an uploaded report artefact"
 
 inputs:
-  input:
-    description: "Description of input"
-    required: true
+  report-paths:
+    # yamllint disable-line rule:line-length
+    description: "Globs matching JUnit XML report files (whitespace or newline separated)"
+    required: false
+    default: |
+      **/target/surefire-reports/*.xml
+      **/target/failsafe-reports/*.xml
+      **/build/test-results/**/*.xml
+  summary:
+    description: "Write a results table to the job summary"
+    required: false
+    default: "true"
+  artifact-upload:
+    description: "Upload the matched report files as a workflow artefact"
+    required: false
+    default: "true"
+  artifact-name:
+    # yamllint disable-line rule:line-length
+    description: "Name for the uploaded artefact (defaults to junit-test-reports-<job>)"
+    required: false
+    default: ""
+  fail-on-failure:
+    # yamllint disable-line rule:line-length
+    description: "Exit with a non-zero status when the results contain failures or errors"
+    required: false
+    default: "false"
 
 outputs:
-  output:
-    description: "Description of output"
-    value: ${{ steps.code.outputs.output }}
+  total:
+    description: "Total number of tests across all report files"
+    value: ${{ steps.report.outputs.total }}
+  passed:
+    description: "Number of tests that passed"
+    value: ${{ steps.report.outputs.passed }}
+  failures:
+    description: "Number of failed tests"
+    value: ${{ steps.report.outputs.failures }}
+  errors:
+    description: "Number of tests that errored"
+    value: ${{ steps.report.outputs.errors }}
+  skipped:
+    description: "Number of skipped tests"
+    value: ${{ steps.report.outputs.skipped }}
+  time:
+    description: "Total test execution time in seconds"
+    value: ${{ steps.report.outputs.time }}
+  report_count:
+    description: "Number of JUnit XML report files parsed"
+    value: ${{ steps.report.outputs.report_count }}
+  result:
+    # yamllint disable-line rule:line-length
+    description: "Overall result: 'success', 'failure', or 'none' (no reports found)"
+    value: ${{ steps.report.outputs.result }}
+  artifact_name:
+    # yamllint disable-line rule:line-length
+    description: "Name of the uploaded report artefact (empty when not uploaded)"
+    value: ${{ steps.report.outputs.artifact_name }}
 
 runs:
   using: "composite"
   steps:
-    - name: "Friendly Name"
-      id: code
+    - name: "Summarise JUnit test results"
+      id: report
       shell: bash
       env:
-        INPUT_VALUE: ${{ inputs.input }}
+        REPORT_PATHS: ${{ inputs.report-paths }}
+        SUMMARY: ${{ inputs.summary }}
+        ARTIFACT_UPLOAD: ${{ inputs.artifact-upload }}
+        ARTIFACT_NAME_INPUT: ${{ inputs.artifact-name }}
+        FAIL_ON_FAILURE: ${{ inputs.fail-on-failure }}
+        JOB_NAME: ${{ github.job }}
       run: |
-        # Friendly Name
-        input="$INPUT_VALUE"
-        if [ -z "$input" ]; then
-          echo "Error: mandatory input was not set/configured ❌"
+        # Summarise JUnit XML test results
+        set -euo pipefail
+
+        # This step uses Bash 4+ features (globstar and associative
+        # arrays). Fail with a clear message on older Bash (still the
+        # default on macOS) rather than a cryptic runtime error.
+        if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+          echo "::error::junit-test-report-action requires Bash 4 or newer"
           exit 1
         fi
 
-        # Write the output using the multiline heredoc format with a random
-        # delimiter so that an input containing newlines cannot inject
-        # additional keys into $GITHUB_OUTPUT (output-file injection). The
-        # delimiter is built from shell-builtin randomness (no external
-        # tools such as openssl/uuidgen, which are not guaranteed on
-        # self-hosted runners) and regenerated until it is provably absent
-        # from the value being emitted.
-        delimiter="ghadelim_${RANDOM}${RANDOM}${RANDOM}${RANDOM}"
-        while [[ "$input" == *"$delimiter"* ]]; do
-          delimiter="ghadelim_${RANDOM}${RANDOM}${RANDOM}${RANDOM}"
+        # Collect report files. Convert every run of whitespace (spaces and
+        # newlines) into individual patterns, then expand each glob. globstar
+        # enables '**' and nullglob makes a non-matching pattern expand to
+        # nothing rather than to the literal pattern text.
+        shopt -s globstar nullglob
+        normalized=$(printf '%s' "$REPORT_PATHS" | tr '\n\r' '  ')
+        # Initialise the array and ignore read's EOF status: with set -e an
+        # empty or whitespace-only report-paths would otherwise abort the
+        # step instead of falling through to the neutral no-reports path.
+        patterns=()
+        read -r -a patterns <<< "$normalized" || true
+        # Track seen paths so overlapping or repeated globs cannot add the
+        # same report file twice (which would double-count totals and
+        # inflate report_count).
+        declare -A seen=()
+        files=()
+        for pattern in "${patterns[@]}"; do
+          # compgen -G expands the glob and prints one match per line, so a
+          # matched path containing spaces or tabs is preserved intact
+          # rather than being word-split. globstar still applies, and the
+          # || true swallows compgen's non-zero status when nothing matches.
+          while IFS= read -r f; do
+            if [ -f "$f" ] && [ -z "${seen["$f"]:-}" ]; then
+              seen["$f"]=1
+              files+=("$f")
+            fi
+          done < <(compgen -G "$pattern" || true)
+        done
+        report_count=${#files[@]}
+
+        if [ "$report_count" -eq 0 ]; then
+          total=0; failures=0; errors=0; skipped=0; time="0.000"
+          result="none"
+          echo "No JUnit XML report files matched the supplied paths"
+        else
+          # Sum the attributes of every opening <testsuite ...> tag. Using
+          # '<' as the record separator turns each tag into one record, so
+          # attributes that wrap across lines still parse correctly, and the
+          # leading-whitespace requirement in attr() stops a name such as
+          # 'runtime' from matching the 'time' attribute. The <testsuites>
+          # wrapper is skipped (no whitespace follows 'testsuite') to avoid
+          # double counting aggregated totals.
+          # The -- before the program guards against a matched report path
+          # that begins with a dash being taken as an awk option.
+          stats=$(LC_ALL=C awk -- '
+            function attr(name,   v) {
+              if (match($0, "[ \t\r\n]" name "=\"[^\"]*\"")) {
+                v = substr($0, RSTART, RLENGTH)
+                sub("^[ \t\r\n]" name "=\"", "", v)
+                sub("\"$", "", v)
+                return v
+              }
+              return ""
+            }
+            BEGIN { RS="<"; t=0; f=0; e=0; s=0; tm=0 }
+            /^testsuite[ \t\r\n]/ {
+              v=attr("tests");    if (v!="") t+=v
+              v=attr("failures"); if (v!="") f+=v
+              v=attr("errors");   if (v!="") e+=v
+              v=attr("skipped");  if (v!="") s+=v
+              v=attr("time");     if (v!="") tm+=v
+            }
+            END { printf "%d %d %d %d %.3f\n", t, f, e, s, tm }
+          ' "${files[@]}")
+          read -r total failures errors skipped time <<< "$stats"
+          if [ $(( failures + errors )) -gt 0 ]; then
+            result="failure"
+          else
+            result="success"
+          fi
+        fi
+
+        passed=$(( total - failures - errors - skipped ))
+        [ "$passed" -lt 0 ] && passed=0
+
+        # Resolve the artefact name up front so the upload step can consume
+        # it. Strip CR/LF and surrounding whitespace from the caller-supplied
+        # name; a value that is empty or whitespace-only then falls back to
+        # the default rather than being used as-is. Only set a name when
+        # reports were matched: with no reports the upload step is skipped,
+        # so the output stays empty per its contract.
+        artifact_name=""
+        if [ "$ARTIFACT_UPLOAD" = "true" ] && [ "$report_count" -gt 0 ]; then
+          sanitized_name=$(printf '%s' "$ARTIFACT_NAME_INPUT" \
+            | tr -d '\r\n' \
+            | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+          if [ -n "$sanitized_name" ]; then
+            artifact_name="$sanitized_name"
+          else
+            artifact_name="junit-test-reports-${JOB_NAME}"
+          fi
+        fi
+
+        # All emitted values are sanitised integers, a fixed-format float,
+        # or a controlled enum, so they cannot inject extra output lines.
+        {
+          echo "total=${total}"
+          echo "passed=${passed}"
+          echo "failures=${failures}"
+          echo "errors=${errors}"
+          echo "skipped=${skipped}"
+          echo "time=${time}"
+          echo "report_count=${report_count}"
+          echo "result=${result}"
+          echo "artifact_name=${artifact_name}"
+        } >> "$GITHUB_OUTPUT"
+
+        # actions/upload-artifact treats its path input as newline- (not
+        # whitespace-) separated, whereas report-paths is whitespace
+        # separated. Emit the resolved report files as a newline-separated
+        # multiline output so the upload step uploads exactly what was
+        # counted. Build the payload first, then pick a randomised heredoc
+        # delimiter and regenerate it until no payload line equals it, so a
+        # matched path cannot terminate the block early (output injection).
+        if [ "$report_count" -gt 0 ]; then
+          upload_payload=$(printf '%s\n' "${files[@]}")
+        else
+          upload_payload=""
+        fi
+        upload_delim="EOF_${RANDOM}${RANDOM}${RANDOM}${RANDOM}"
+        while printf '%s\n' "$upload_payload" \
+          | grep -qxF "$upload_delim"; do
+          upload_delim="EOF_${RANDOM}${RANDOM}${RANDOM}${RANDOM}"
         done
         {
-          printf '%s<<%s\n' 'output' "$delimiter"
-          printf '%s\n' "$input"
-          printf '%s\n' "$delimiter"
+          echo "upload_paths<<${upload_delim}"
+          if [ "$report_count" -gt 0 ]; then
+            printf '%s\n' "$upload_payload"
+          fi
+          echo "${upload_delim}"
         } >> "$GITHUB_OUTPUT"
-        echo "Action received: $input ✅"
-        echo "Action received: $input ✅" >> "$GITHUB_STEP_SUMMARY"
+
+        if [ "$SUMMARY" = "true" ]; then
+          case "$result" in
+            failure) icon="❌" ;;
+            none) icon="➖" ;;
+            *) icon="✅" ;;
+          esac
+          {
+            echo "## 🧪 JUnit Test Report ${icon}"
+            echo ""
+            echo "| Metric | Count |"
+            echo "|--------|-------|"
+            echo "| Total | ${total} |"
+            echo "| Passed | ${passed} |"
+            echo "| Failures | ${failures} |"
+            echo "| Errors | ${errors} |"
+            echo "| Skipped | ${skipped} |"
+            echo "| Duration (s) | ${time} |"
+            echo "| Report files | ${report_count} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        info="total=${total} passed=${passed} failures=${failures}"
+        info="${info} errors=${errors} skipped=${skipped}"
+        echo "Result: ${result} (${info})"
+
+        if [ "$FAIL_ON_FAILURE" = "true" ] && \
+           [ $(( failures + errors )) -gt 0 ]; then
+          msg="JUnit results contain ${failures} failure(s)"
+          msg="${msg} and ${errors} error(s)"
+          echo "::error::${msg}"
+          exit 1
+        fi
+
+    - name: "Upload JUnit reports"
+      if: >-
+        ${{ inputs.artifact-upload == 'true'
+        && steps.report.outputs.report_count != '0' }}
+      # yamllint disable-line rule:line-length
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ steps.report.outputs.artifact_name }}
+        path: ${{ steps.report.outputs.upload_paths }}
+        if-no-files-found: ignore
+        retention-days: 7
