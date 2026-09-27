@@ -53,7 +53,7 @@ jobs:
       # Passing fixtures: five tests, one skipped, no failures.
       - name: "Report passing fixtures"
         id: pass
-        uses: ./
+        uses: $/
         with:
           report-paths: "tests/reports/pass/*.xml"
           artifact-name: "junit-pass-fixtures"
@@ -97,7 +97,7 @@ jobs:
       # skipped and artifact_name must be empty.
       - name: "Report with no matching files"
         id: none
-        uses: ./
+        uses: $/
         with:
           report-paths: "tests/reports/does-not-exist/*.xml"
 
@@ -126,7 +126,7 @@ jobs:
       - name: "Report failing fixtures"
         id: fail
         continue-on-error: true
-        uses: ./
+        uses: $/
         with:
           report-paths: "tests/reports/fail/*.xml"
           artifact-upload: "false"
