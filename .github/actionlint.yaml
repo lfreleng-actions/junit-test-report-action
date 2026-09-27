@@ -1,7 +1,10 @@
 ---
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: 2026 The Linux Foundation
+# SPDX-FileCopyrightText: 2025 The Linux Foundation
 
-# No path-specific overrides are required; the test workflow uses only
-# inputs that the action defines, so actionlint needs no ignore rules.
-paths: {}
+paths:
+  .github/workflows/testing.yaml:
+    ignore:
+      # The fork rejects a bare '$/' (an action at the repository
+      # root), which GitHub accepts and runs.
+      - 'specifying action "\$/" in invalid format because path is missing'
