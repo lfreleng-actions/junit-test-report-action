@@ -157,3 +157,112 @@ jobs:
             exit 1
           fi
           echo "Failing result validated ✅"
+
+  ### Count reports from other JUnit producers ###
+  parsing:
+    name: "Parse ${{ matrix.fixture }} reports"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # node --test --test-reporter=junit: top-level test() cases sit
+          # outside any <testsuite>, and describe blocks nest suites.
+          - fixture: "node"
+            total: "5"
+            passed: "3"
+            failures: "1"
+            errors: "0"
+            skipped: "1"
+            time: "0.002"
+          # jest-junit: one flat suite per test file.
+          - fixture: "jest"
+            total: "5"
+            passed: "3"
+            failures: "1"
+            errors: "0"
+            skipped: "1"
+            time: "0.187"
+          # vitest --reporter=junit: one flat suite per test file.
+          - fixture: "vitest"
+            total: "5"
+            passed: "3"
+            failures: "1"
+            errors: "0"
+            skipped: "1"
+            time: "0.008"
+          # Hand-written: CDATA, comments and a DOCTYPE quoting markup,
+          # attribute values quoting attributes, missing attributes,
+          # nested suites, count-only and wrapper-only files.
+          - fixture: "edge"
+            total: "14"
+            passed: "8"
+            failures: "2"
+            errors: "2"
+            skipped: "2"
+            time: "4.000"
+    steps:
+      # yamllint disable-line rule:line-length
+      - uses: lfreleng-actions/harden-runner-block-action@a32eb064a1188f6b0f15d2c0c0381efe54b0dd22  # v0.12.2
+        with:
+          config: '@18d9c4446bea555d0783e850f6d295f844fe8f67'  # v0.1.1
+
+      - name: 'Harden runner (block)'
+        # yamllint disable-line rule:line-length
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
+        with:
+          egress-policy: 'block'
+          allowed-endpoints: >
+            ${{ env.CONNECTION_ALLOW_LIST }}
+
+      - name: "Checkout repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Report ${{ matrix.fixture }} fixtures"
+        id: report
+        uses: $/
+        with:
+          report-paths: "tests/reports/${{ matrix.fixture }}/*.xml"
+          artifact-upload: "false"
+
+      - name: "Validate ${{ matrix.fixture }} result"
+        shell: bash
+        env:
+          TOTAL: ${{ steps.report.outputs.total }}
+          PASSED: ${{ steps.report.outputs.passed }}
+          FAILURES: ${{ steps.report.outputs.failures }}
+          ERRORS: ${{ steps.report.outputs.errors }}
+          SKIPPED: ${{ steps.report.outputs.skipped }}
+          TIME: ${{ steps.report.outputs.time }}
+          RESULT: ${{ steps.report.outputs.result }}
+          WANT_TOTAL: ${{ matrix.total }}
+          WANT_PASSED: ${{ matrix.passed }}
+          WANT_FAILURES: ${{ matrix.failures }}
+          WANT_ERRORS: ${{ matrix.errors }}
+          WANT_SKIPPED: ${{ matrix.skipped }}
+          WANT_TIME: ${{ matrix.time }}
+        run: |
+          # Validate parsed counts
+          set -euo pipefail
+          errors=0
+          check() {
+            if [ "$2" != "$3" ]; then
+              echo "Error: $1 expected '$3' but got '$2' ❌"
+              errors=1
+            else
+              echo "OK: $1 = $2 ✅"
+            fi
+          }
+          check "total" "$TOTAL" "$WANT_TOTAL"
+          check "passed" "$PASSED" "$WANT_PASSED"
+          check "failures" "$FAILURES" "$WANT_FAILURES"
+          check "errors" "$ERRORS" "$WANT_ERRORS"
+          check "skipped" "$SKIPPED" "$WANT_SKIPPED"
+          check "time" "$TIME" "$WANT_TIME"
+          check "result" "$RESULT" "failure"
+          exit "$errors"

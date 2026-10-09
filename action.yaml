@@ -126,34 +126,163 @@ runs:
           result="none"
           echo "No JUnit XML report files matched the supplied paths"
         else
-          # Sum the attributes of every opening <testsuite ...> tag. Using
-          # '<' as the record separator turns each tag into one record, so
-          # attributes that wrap across lines still parse correctly, and the
-          # leading-whitespace requirement in attr() stops a name such as
-          # 'runtime' from matching the 'time' attribute. The <testsuites>
-          # wrapper is skipped (no whitespace follows 'testsuite') to avoid
-          # double counting aggregated totals.
+          # Count every <testcase> element, wherever it sits: inside a
+          # <testsuite>, inside nested suites, or directly under the
+          # <testsuites> wrapper (as Node's built-in reporter writes
+          # top-level tests). Each case counts once, as an error, failure,
+          # skip or pass according to the <error>, <failure> or <skipped>
+          # child it holds. A file without any <testcase> falls back to
+          # the count attributes of its outermost <testsuite> elements, or
+          # to those of the <testsuites> wrapper when no outermost suite
+          # carries any. Nested suites never add to totals, as their
+          # parents already include them.
+          # Duration sums the time of each outermost <testsuite> (or of
+          # its cases when it carries no time) and of cases outside any
+          # suite, again falling back to the wrapper when a file has no
+          # cases and no outermost suite time.
+          # Using '<' as the record separator turns each tag into one
+          # record. Raw '<' is legal only inside comments, CDATA sections,
+          # processing instructions and the DOCTYPE, so skipping those
+          # keeps markup quoted in failure output or entity declarations
+          # from being read as elements. tag() stops at the first '>'
+          # outside a quoted value, so attributes cannot be read from
+          # element text, and attrs() reads the tag one name="value" pair
+          # at a time, so text inside one value cannot pass for another
+          # attribute.
           # The -- before the program guards against a matched report path
           # that begins with a dash being taken as an awk option.
-          stats=$(LC_ALL=C awk -- '
-            function attr(name,   v) {
-              if (match($0, "[ \t\r\n]" name "=\"[^\"]*\"")) {
-                v = substr($0, RSTART, RLENGTH)
-                sub("^[ \t\r\n]" name "=\"", "", v)
-                sub("\"$", "", v)
-                return v
+          stats=$(LC_ALL=C awk -v sq="'" -- '
+            function tag(r,   out) {
+              out = ""
+              while (r != "" && match(r, tagre)) {
+                out = out substr(r, 1, RLENGTH)
+                r = substr(r, RLENGTH + 1)
               }
-              return ""
+              return out
             }
-            BEGIN { RS="<"; t=0; f=0; e=0; s=0; tm=0 }
-            /^testsuite[ \t\r\n]/ {
-              v=attr("tests");    if (v!="") t+=v
-              v=attr("failures"); if (v!="") f+=v
-              v=attr("errors");   if (v!="") e+=v
-              v=attr("skipped");  if (v!="") s+=v
-              v=attr("time");     if (v!="") tm+=v
+            function attrs(t,   p, k, v) {
+              split("", A)
+              sub(/^[^ \t\r\n\/]*/, "", t)
+              while (match(t, attrre)) {
+                p = substr(t, 1, RLENGTH); t = substr(t, RLENGTH + 1)
+                k = substr(p, 1, index(p, "=") - 1)
+                sub(/^[ \t\r\n]+/, "", k); sub(/[ \t\r\n]+$/, "", k)
+                v = substr(p, index(p, "=") + 1); sub(/^[ \t\r\n]+/, "", v)
+                A[k] = substr(v, 2, length(v) - 2)
+              }
             }
-            END { printf "%d %d %d %d %.3f\n", t, f, e, s, tm }
+            function attr(name) { return (name in A) ? A[name] : "" }
+            # Track a DOCTYPE across records, honouring quotes, comments
+            # and the [...] internal subset; return 1 at its closing >.
+            function dtd(r,   i, c, p) {
+              i = 1
+              if (dq == "" && substr(r, 1, 3) == "!--") { dc = 1; i = 4 }
+              while (i <= length(r)) {
+                if (dc || dq != "") {
+                  p = index(substr(r, i), dc ? "-->" : dq)
+                  if (!p) return 0
+                  i += p + (dc ? 2 : 0); dc = 0; dq = ""
+                  continue
+                }
+                c = substr(r, i, 1); i++
+                if (c == "\"" || c == sq) dq = c
+                else if (c == "[") db++
+                else if (c == "]") db--
+                else if (c == ">" && db <= 0) return 1
+              }
+              return 0
+            }
+            function self_closing(t) { return t ~ /\/[ \t\r\n]*$/ }
+            function suite_open(t,   v) {
+              suites++; attrs(t)
+              v = attr("time"); st_timed = (v != ""); st_time = v + 0
+              if (st_timed) t_seen = 1
+              st_case_time = 0
+              v = attr("tests"); if (v != "") { a_seen = 1; at += v }
+              v = attr("failures"); if (v != "") { a_seen = 1; af += v }
+              v = attr("errors"); if (v != "") { a_seen = 1; ae += v }
+              v = attr("skipped"); if (v != "") { a_seen = 1; as += v }
+            }
+            function suite_close() {
+              ftm += st_timed ? st_time : st_case_time
+            }
+            function case_close() {
+              if (c_err) ce++
+              else if (c_fail) cf++
+              else if (c_skip) cs++
+              in_case = 0
+            }
+            function flush() {
+              if (in_case) case_close()
+              if (depth > 0) suite_close()
+              if (nc > 0) { T += nc; F += cf; E += ce; S += cs }
+              else if (a_seen) { T += at; F += af; E += ae; S += as }
+              else { T += wt; F += wf; E += we; S += ws }
+              TM += (nc > 0 || t_seen) ? ftm : wtm
+              nc = cf = ce = cs = 0; at = af = ae = as = a_seen = t_seen = 0
+              wt = wf = we = ws = wtm = w_seen = 0
+              suites = depth = ftm = in_case = 0; skip = ""
+              dt = dc = db = 0; dq = ""
+            }
+            BEGIN {
+              RS = "<"; T = F = E = S = TM = 0; skip = ""
+              valre = "(\"[^\"]*\"|" sq "[^" sq "]*" sq ")"
+              tagre = "^([^>\"" sq "]+|" valre ")"
+              attrre = "^[ \t\r\n]+[^ \t\r\n=/>]+[ \t\r\n]*=[ \t\r\n]*" valre
+            }
+            FNR == 1 { flush() }
+            {
+              r = $0
+              if (dt) { if (dtd(r)) dt = 0; next }
+              if (skip != "") { if (index(r, skip)) skip = ""; next }
+              if (substr(r, 1, 8) == "!DOCTYPE") {
+                if (!dtd(r)) dt = 1
+                next
+              }
+              if (substr(r, 1, 3) == "!--") {
+                if (!index(substr(r, 4), "-->")) skip = "-->"
+                next
+              }
+              if (substr(r, 1, 8) == "![CDATA[") {
+                if (!index(substr(r, 9), "]]>")) skip = "]]>"
+                next
+              }
+              if (substr(r, 1, 1) == "?") {
+                if (!index(r, "?>")) skip = "?>"
+                next
+              }
+              if (!match(r, /^\/?[A-Za-z_][-A-Za-z0-9_.:]*/)) next
+              n = substr(r, 1, RLENGTH)
+              if (n == "testcase") {
+                t = tag(r); nc++; attrs(t)
+                v = attr("time")
+                if (depth > 0) st_case_time += v; else ftm += v
+                if (!self_closing(t)) {
+                  in_case = 1; c_err = c_fail = c_skip = 0
+                }
+              } else if (n == "/testcase") {
+                if (in_case) case_close()
+              } else if (in_case && n == "error") {
+                c_err = 1
+              } else if (in_case && n == "failure") {
+                c_fail = 1
+              } else if (in_case && n == "skipped") {
+                c_skip = 1
+              } else if (n == "testsuite") {
+                t = tag(r)
+                if (depth == 0) suite_open(t)
+                if (!self_closing(t)) depth++
+                else if (depth == 0) suite_close()
+              } else if (n == "/testsuite") {
+                if (depth > 0 && --depth == 0) suite_close()
+              } else if (n == "testsuites" && !w_seen) {
+                t = tag(r); w_seen = 1; attrs(t)
+                wt = attr("tests") + 0; wf = attr("failures") + 0
+                we = attr("errors") + 0; ws = attr("skipped") + 0
+                wtm = attr("time") + 0
+              }
+            }
+            END { flush(); printf "%d %d %d %d %.3f\n", T, F, E, S, TM }
           ' "${files[@]}")
           read -r total failures errors skipped time <<< "$stats"
           if [ $(( failures + errors )) -gt 0 ]; then
