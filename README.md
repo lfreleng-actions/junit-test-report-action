@@ -14,9 +14,11 @@ Summarise JUnit XML test results in the job summary, report counts through
 action outputs, and upload the matched report files as a workflow artefact.
 
 The action parses the JUnit XML format rather than a specific build tool, so
-it serves Maven (Surefire and Failsafe) and Gradle alike. The default paths
-match the report directories that both tools produce, so most callers add the
-action as a step without further configuration.
+it serves Maven (Surefire and Failsafe) and Gradle alike, as well as other
+producers such as Node's built-in test runner, `jest-junit` and Vitest. The
+default paths match the report directories that Maven and Gradle produce, so
+most callers of those tools add the action as a step without further
+configuration; other producers set `report-paths`.
 
 ## Usage
 
@@ -81,12 +83,27 @@ Override it to point at a bespoke report location.
 
 ## Implementation Details
 
-- The action sums the `tests`, `failures`, `errors`, `skipped`, and `time`
-  attributes of every opening `<testsuite>` tag, and skips the
-  `<testsuites>` wrapper so aggregated totals never count twice.
+- The action counts every `<testcase>` element, whether it sits in a
+  `<testsuite>`, in a nested suite, or directly under the `<testsuites>`
+  wrapper (where Node's `node --test --test-reporter=junit` writes
+  top-level tests). Each case counts once: as an error, failure or skip
+  when it holds an `<error>`, `<failure>` or `<skipped>` element, and as a
+  pass otherwise.
+- A report file without any `<testcase>` falls back to the `tests`,
+  `failures`, `errors` and `skipped` attributes of its outermost
+  `<testsuite>` elements. When no outermost suite carries any of those
+  attributes, including when the file has no suites, it uses the
+  attributes of the `<testsuites>` wrapper instead. Nested suites never add
+  to totals, so nothing counts twice.
+- Duration sums the `time` of each outermost `<testsuite>`, or of its test
+  cases when the suite has no `time`, plus the time of cases outside any
+  suite. A file with no test cases and no outermost suite `time` uses the
+  wrapper's `time`.
 - A parser that treats `<` as the record separator reads attributes that
-  wrap across lines, and a leading-whitespace match stops an attribute such
-  as `runtime` from matching `time`.
+  wrap across lines, one `name="value"` pair at a time, so text inside one
+  value never passes for another attribute. It skips comments, CDATA
+  sections, processing instructions and the DOCTYPE, so markup quoted in
+  failure output or entity declarations cannot count as a test.
 - When no report files match, the action reports `result=none` with zero
   counts and exits zero, so a job that skips tests stays green.
 - `fail-on-failure` turns a run that holds failures or errors into a failed
