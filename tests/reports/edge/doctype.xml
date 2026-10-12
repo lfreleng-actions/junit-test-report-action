@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 The Linux Foundation -->
+<!-- Hand-written: a DOCTYPE internal subset and attribute values -->
+<!-- that quote other attributes. -->
+<!DOCTYPE testsuites [
+  <!-- ']>' and "<testcase>" inside a comment -->
+  <!ENTITY sample "<testcase name='ghost'><failure/></testcase>">
+  <!ENTITY note '>]'>
+]>
+<testsuites>
+  <testsuite name='note tests="99" time="99"' time="0.250">
+    <testcase name='time="7" failures="1"' time="0.250"/>
+  </testsuite>
+</testsuites>

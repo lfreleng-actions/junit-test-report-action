@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 The Linux Foundation -->
+<testsuites name="jest tests" tests="5" failures="1" errors="0" time="0.325">
+  <testsuite name="undefined" errors="0" failures="1" skipped="1" timestamp="2026-10-09T16:37:05" time="0.187" tests="5">
+    <testcase classname=" top-level passes" name=" top-level passes" time="0.001">
+    </testcase>
+    <testcase classname=" top-level fails" name=" top-level fails" time="0.002">
+      <failure>Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: &quot;&lt;testsuite&gt;&quot;
+Received: &quot;&lt;testcase name=\&quot;fake\&quot;/&gt;&quot;
+    at Object.toBe (/home/runner/work/example/example/sample.test.js:6:39)
+    at Promise.finally.completed (/home/runner/work/example/example/node_modules/jest-circus/build/jestAdapterInit.js:1834:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (/home/runner/work/example/example/node_modules/jest-circus/build/jestAdapterInit.js:1774:10)
+    at _callCircusTest (/home/runner/work/example/example/node_modules/jest-circus/build/jestAdapterInit.js:1167:40)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at _runTestInContext (/home/runner/work/example/example/node_modules/jest-circus/build/jestAdapterInit.js:1103:3)
+    at runTestWithContext (/home/runner/work/example/example/node_modules/jest-circus/build/jestAdapterInit.js:996:5)
+    at _runTestsForDescribeBlockOnce (/home/runner/work/example/example/node_modules/jest-circus/build/jestAdapterInit.js:1008:11)
+    at _runTestsForDescribeBlock (/home/runner/work/example/example/node_modules/jest-circus/build/jestAdapterInit.js:824:5)
+    at run (/home/runner/work/example/example/node_modules/jest-circus/build/jestAdapterInit.js:789:3)
+    at runAndTransformResultsToJestFormat (/home/runner/work/example/example/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)
+    at jestAdapter (/home/runner/work/example/example/node_modules/jest-circus/build/runner.js:111:19)
+    at runTestInternal (/home/runner/work/example/example/node_modules/jest-runner/build/index.js:247:16)
+    at runTest (/home/runner/work/example/example/node_modules/jest-runner/build/index.js:315:7)</failure>
+    </testcase>
+    <testcase classname=" top-level skipped" name=" top-level skipped" time="0">
+      <skipped/>
+    </testcase>
+    <testcase classname="passing group adds" name="passing group adds" time="0">
+    </testcase>
+    <testcase classname="passing group nested group subtracts" name="passing group nested group subtracts" time="0">
+    </testcase>
+  </testsuite>
+</testsuites>

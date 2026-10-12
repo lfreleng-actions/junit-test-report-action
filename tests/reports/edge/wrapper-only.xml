@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 The Linux Foundation -->
+<!-- Hand-written: counts carried only by the wrapper; the suite -->
+<!-- carries no count or time attributes. -->
+<testsuites tests="3" failures="1" errors="0" skipped="0" time="0.250">
+  <testsuite name="attribute-less"/>
+</testsuites>

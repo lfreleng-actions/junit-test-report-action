@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 The Linux Foundation -->
+<testsuites name="vitest tests" tests="5" failures="1" errors="0" time="0.007693292">
+    <testsuite name="sample.test.mjs" timestamp="2026-10-09T16:37:07.108Z" hostname="runner" tests="5" failures="1" errors="0" skipped="1" time="0.007693292">
+        <testcase classname="sample.test.mjs" name="top-level passes" time="0.001148375">
+        </testcase>
+        <testcase classname="sample.test.mjs" name="top-level fails" time="0.005018584">
+            <failure message="expected &apos;&lt;testcase name=&quot;fake&quot;/&gt;&apos; to be &apos;&lt;testsuite&gt;&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;&lt;testcase name=&quot;fake&quot;/&gt;&apos; to be &apos;&lt;testsuite&gt;&apos; // Object.is equality
+
+Expected: &quot;&lt;testsuite&gt;&quot;
+Received: &quot;&lt;testcase name=&quot;fake&quot;/&gt;&quot;
+
+ ❯ sample.test.mjs:8:39
+            </failure>
+        </testcase>
+        <testcase classname="sample.test.mjs" name="top-level skipped" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="sample.test.mjs" name="passing group &gt; adds" time="0.000185792">
+        </testcase>
+        <testcase classname="sample.test.mjs" name="passing group &gt; nested group &gt; subtracts" time="0.000098917">
+        </testcase>
+    </testsuite>
+</testsuites>

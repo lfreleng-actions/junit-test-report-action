@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 The Linux Foundation -->
+<!-- Hand-written: markup that a naive parser would miscount. -->
+<testsuites tests="99" failures="99" errors="99" skipped="99" time="99">
+  <testsuite name='no-count-attributes'>
+    <testcase name='self-closing pass' time='0.100'/>
+    <testcase name="error" time="0.200">
+      <error message="expected a > b" type="Error"/>
+    </testcase>
+    <testcase name="failure quoting markup" time="0.300">
+      <failure message="see output"><![CDATA[
+        <testcase name="ghost-in-cdata"/>
+        <testsuite tests="7" failures="7">
+      ]]></failure>
+    </testcase>
+    <!-- <testcase name="ghost-in-comment"><failure/></testcase> -->
+    <testsuite name="nested" tests="1" skipped="1" time="5.000">
+      <testcase name="skipped" time="0.400">
+        <skipped message="not today"/>
+      </testcase>
+      <testsuite name="empty nested"/>
+    </testsuite>
+    <testcase name="flaky pass" time="0">
+      <flakyFailure message="passed on rerun"/>
+    </testcase>
+  </testsuite>
+  <testcase name="outside any suite" time="0.500">
+    <system-out><![CDATA[<testsuite tests="7"><testcase/>]]></system-out>
+  </testcase>
+</testsuites>
